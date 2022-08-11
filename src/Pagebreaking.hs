@@ -5,11 +5,16 @@ import Utilities as UT
 import qualified Linebreaking as LB
 import Data.Int
 import Data.List
+import Data.Char
 import Linebreaking (knuthPlassLineBreaking)
 
 data PageBreakError = NoInput  | NoLines | NoSolutionLooseness | NoRemainingActives
                     | LBNoInput | LBNoLines | LBNoSolutionLooseness | LBNoRemainingActives deriving Show
 
+data Position = Pos Height Vert 
+
+data Height = Top | Bot
+data Vert = Le | Cent | Ri 
 --  data model representing the margins of a Page (unit: pts)
 data Margins  = Margins {
     leftMargin :: Int,
@@ -67,17 +72,17 @@ simplePageBreaking (P (ls, lh)) cHeight | length ls >= lineCount = P (take lineC
         lineCount = floor ((65536 * fromIntegral cHeight) / lh)
 
 -- page breaking algorithm, using the knuth-plass-linebreaking algorithm to make pages out of lines
-knuthPlassPageBreaking :: Either LB.LineBreakError [[LB.Item b]] -> [LB.Width] -> LB.Parameters -> Either PageBreakError (Either LB.LineBreakError [[LB.Item [LB.Item b]]])
-knuthPlassPageBreaking (Left _) _ _ = Left NoInput
-knuthPlassPageBreaking (Right lines) pageHeights parameters'= Right (LB.knuthPlassLineBreaking' (buildLines' lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
+knuthPlassPageBreaking :: Either LB.LineBreakError [[LB.Item b]] -> [LB.Width] -> Int -> LB.Parameters -> Either PageBreakError (Either LB.LineBreakError [[LB.Item [LB.Item b]]])
+knuthPlassPageBreaking (Left _) _ _ _ = Left NoInput
+knuthPlassPageBreaking (Right lines) pageHeights ils parameters'= Right (LB.knuthPlassLineBreaking' (buildLines' ils lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
 
 -- makes Boxes, which the algorithm can use, out of the lines
 buildLines :: [a] -> [LB.Item a]
 buildLines  = map (\x -> LB.Box (Just x) 655360)
 
 -- adds changeable glue inbetween the lines
-buildLines' :: [b] -> [LB.Item b]
-buildLines' lines = intersperse (LB.Glue (round $ 655360 * 1.2) 1000 1000) (buildLines lines) ++ [LB.Glue (round $ 655360 * 1.2) 1000 1000]
+buildLines' :: Int -> [b] -> [LB.Item b]
+buildLines' ils lines = intersperse (LB.Glue ils 1000 1000) (buildLines lines) ++ [LB.Glue ils 1000 1000]
 
 -- reduces the complex data structure, the page-breaking algorithm gives as an output, by transforming the errors
 -- from the linebreaking into errors of the pagebreaking
@@ -91,19 +96,19 @@ prune (Right (Left e)) = case e of
 prune (Right (Right xs)) = Right xs
 
 -- builds the internally used representation for Nodes, to later display the output in a DVI-File
-dviNodeOutput :: DVI.Font -> Float -> [[LB.Item [LB.Item Char]]] -> [DVI.Node]
-dviNodeOutput font ilf =  map (dviPageNodeOutput font ilf)
+dviNodeOutput :: DVI.Font -> [[LB.Item [LB.Item Char]]] -> [DVI.Node]
+dviNodeOutput font =  map (dviPageNodeOutput font)
     where
-        dviPageNodeOutput :: DVI.Font -> Float -> [LB.Item [LB.Item Char]] -> DVI.Node
-        dviPageNodeOutput font' ilf ((LB.Box (Just xs) bh) : (LB.Glue lh _ _):ls) =
+        dviPageNodeOutput :: DVI.Font -> [LB.Item [LB.Item Char]] -> DVI.Node
+        dviPageNodeOutput font' ((LB.Box (Just xs) bh) : (LB.Glue lh _ _):ls) =
             DVI.wrapNode
             $ DVI.BoxNode DVI.Vertical 0 0 0 (DVI.GlueSet 0 DVI.Fill DVI.Stretching)
             $ DVI.interlineGlue
              0
-            (DVI.Glue (numberConverter lh ilf) (DVI.GlueSS 0 0 0 0) (DVI.GlueSS 0 0 0 0))
+            (DVI.Glue (fromIntegral lh) (DVI.GlueSS 0 0 0 0) (DVI.GlueSS 0 0 0 0))
             (DVI.wrapNode $ DVI.PenaltyNode Nothing)
             $ concatMap (packItems font') [xs : extractItems ls]
-        dviPageNodeOutput _ _ _ = error "something went wrong"
+        dviPageNodeOutput _ _ = error "something went wrong"
 
         numberConverter :: Int -> Float -> Int32
         numberConverter i f = fromIntegral $ fromEnum ((fromIntegral i :: Float) * f) :: Int32
@@ -113,3 +118,30 @@ dviNodeOutput font ilf =  map (dviPageNodeOutput font ilf)
         extractItems [LB.Box (Just xs) _] = [xs]
         extractItems ((LB.Box (Just xs) _):ls) = xs : extractItems ls
         extractItems (_:ls ) = extractItems ls
+
+posToCoord :: Position -> (Int,Int)
+posToCoord (Pos Top Ri)   = (482, 30)
+posToCoord (Pos Top Cent) = (226,30)
+posToCoord (Pos Top Le)   = (-30, 30) 
+posToCoord (Pos Bot Ri)   = (482, -750)
+posToCoord (Pos Bot Cent) = (226, -750)
+posToCoord (Pos Bot Le)   = (-30, -750)
+
+
+pageNumbers :: Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
+pageNumbers p font ilf i offset False | iOff < 1                            = []
+                                       | offset < 1 && iOff < (10 + offset)  = [pnHelper p i 0]
+                                       | offset > 0 && iOff < 10             = [pnHelper p iOff 0] 
+                                       | offset < 1 && iOff >= (10 + offset) = [pnHelper p (i `mod` 10) 5,
+                                                                                pnHelper p (i `div` 10) 0]
+                                       | offset > 0 && iOff >= 10            = [pnHelper p (iOff `mod` 10) 5,
+                                                                                pnHelper p (iOff `div` 10) 0]
+pageNumbers p font ilf i offset True  | offset < 0 && iOff < (1 + offset) || iOff < 1 = []
+                                       | iOff < 10                                     = [pnHelper p iOff 0]
+                                       | iOff >= 10                                    = [pnHelper p (iOff `mod` 10) 5,
+                                                                                          pnHelper p (iOff `div` 10) 0]
+pageNumbers _ _ _ _ _ _ = []
+     where  
+        iOff = i + offset                   
+        pnHelper p' i' addX = DVI.shiftPage (DVI.points $ fromIntegral (fst (posToCoord p') + addX) , DVI.points $ fromIntegral $ snd $ posToCoord p' )
+                 $ DVI.renderNode $ simpleDviNodeOutput font ilf [[LB.Box (Just (chr (i' + 48 ))) 0]]

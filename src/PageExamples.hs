@@ -21,16 +21,26 @@ defaultLines = [ fromIntegral $ points (fromIntegral $ fst $ computeBoxSize' def
 
 -- experimental
 defaultPageHeights :: [Int]
-defaultPageHeights = concat $ replicate 8 [fromIntegral $ points (fromIntegral $ snd (computeBoxSize' defaultMargins) + 5 * getBotMargin defaultMargins)]
+defaultPageHeights = concat $ replicate 12 [fromIntegral $ points (46 * 10 + 45 * 15)]
 
 defaultFont :: IO Font
-defaultFont = loadFont (Right defaultFontSize) "C:/texlive/2021/texmf-dist/fonts/tfm/public/cm/cmr10.tfm"
+defaultFont = loadFont (Right defaultFontSize)
+                       "C:/texlive/2021/texmf-dist/fonts/tfm/public/baskervillef/BaskervilleF-Regular.tfm"
 
 defaultFontSize :: Word32
-defaultFontSize = 65536 * 10 
+defaultFontSize = 65536 * 10
 
 defaultInterlineFactor :: Float
 defaultInterlineFactor = 1.2
+
+defaultInterlineSpace :: Int
+defaultInterlineSpace = 65536 * 15
+
+defaultPageOffset :: Int 
+defaultPageOffset = 2
+
+startOnNonFirstPage :: Bool 
+startOnNonFirstPage = True
 
 -- default 72 72 64 64 
 defaultMargins :: PB.Margins
@@ -100,39 +110,39 @@ examplePB = do
     font <- defaultFont
     let
       items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree)  defaultSpaceFactors False
-    print $ prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultParameters
+    print $ prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultInterlineSpace defaultParameters
 
 --  first attempt to create a document using the page-breaking algorithm and the DVI-processing, printing just one page
 makePage :: Either PageBreakError [[Item [Item Char]]] -> Font -> IO()
 makePage pages font = createDVI ("./files/" ++ "something.dvi") 1000 dviUnitsTeX
                       >>= shipOut . Page (pageNum (1 :: Int))
-                        (shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) $ renderNode (PB.dviNodeOutput font defaultInterlineFactor (fromRight [] pages) !! 1))
+                        (shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) $ renderNode (PB.dviNodeOutput font (fromRight [] pages) !! 1))
                       >>= finishDVI
 
 
 -- creates a document, using the pagebreaking algorithm
 kpbDocument :: IO()
-kpbDocument = do 
+kpbDocument = do
       font <- defaultFont
-      let 
-        items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree)  defaultSpaceFactors False
-        pages = prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultParameters
+      let
+        items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree ++ TT.mobyDickChapterFour)  defaultSpaceFactors False
+        pages = prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultInterlineSpace defaultParameters
       -- print pages
       multiPageLinebreaker'' pages font "kpb_document.dvi"
 
 --  alternative version of multiPageLinebreaker' for the page-breaking algorithm instead of the simple one
 multiPageLinebreaker'' :: Either PageBreakError [[Item [Item Char]]] -> Font -> String -> IO()
 multiPageLinebreaker'' (Right pages) font fileName = do
-  createDVI ("./files/" ++ fileName) 1000 dviUnitsTeX 
+  createDVI ("./files/" ++ fileName) 1000 dviUnitsTeX
   >>= mPLhelper' 1 pages font
   >>= finishDVI
   where
     mPLhelper' :: Int -> [[Item [Item Char]]] -> Font -> DocStat -> IO DocStat
     mPLhelper' _ [] _ _= error "no valid document"
     mPLhelper' i [p] font ds = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent' i font p)) ds
-    mPLhelper' i (p:ps) font ds | i < length defaultPageHeights = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent' i font p))) ds 
+    mPLhelper' i (p:ps) font ds | i <= length defaultPageHeights = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent' i font p))) ds
                                           >>= (mPLhelper' (i+1) ps font)
                                 | otherwise = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent' i font p))) ds
-    pageContent' i font p = [shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) $ renderNode (PB.dviNodeOutput font defaultInterlineFactor  pages !! (i-1)),
-                             shiftPage (points $ fromIntegral 226, points $ fromIntegral 30) $ renderNode $ simpleDviNodeOutput font defaultInterlineFactor [[LB.Box (Just (chr (i + 48))) 0]]]
+    pageContent' i font p = shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) (renderNode (PB.dviNodeOutput font pages !! (i-1)))
+                             : PB.pageNumbers (Pos Top Ri) font defaultInterlineFactor i defaultPageOffset startOnNonFirstPage
 multiPageLinebreaker'' _ _ _ = error "no valid document"
