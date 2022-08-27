@@ -1,5 +1,5 @@
 module Utilities where
-
+ 
 import Data.List (intercalate)
 import Data.Maybe
 import Graphics.DVI as DVI
