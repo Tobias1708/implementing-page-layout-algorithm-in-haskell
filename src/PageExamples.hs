@@ -1,27 +1,68 @@
 {-# LANGUAGE BlockArguments #-}
-module PageExamples where
+module PageExamples (ownDoc,kpbDoc,defaultSettings,mdSettings, dgSettings, meSettings) where
 
 import Graphics.DVI as DVI
-import Linebreaking as LB
+import qualified Linebreaking as LB
 import Utilities as UT
 import TestText as TT
-import qualified Linebreaking as LB
 import Pagebreaking as PB
 import GHC.Word (Word32)
-import Markdown as MD
-import Data.Char
-import qualified Pagebreaking as PE
-import Data.Either
+import Data.Either (fromRight)
+import qualified Pagebreaking as PB
+import Text.Show (Show)
 
-defaultParameters :: LB.Parameters
-defaultParameters = Parameters 10000 10000 infinity infinity
+data Settings = Settings {
+  lbParams :: LB.Parameters,
+  pbParams :: LB.Parameters,
+  font :: IO Font,
+  fontSize :: Word32,
+  ilFactor :: Float,
+  spaceFactors :: SimpleSpaceFactors,
+  numberPosition :: PB.Position,
+  pageOffset :: Int,
+  startOnOffset :: Bool,
+  lineWidth :: [Int],
+  pageHeight :: [Int],
+  margins :: PB.Margins,
+  docType :: PB.DocType 
+}  
+-- the following section contains all settings that can be made for the page layout algorithm
+defaultSettings :: Settings
+defaultSettings = Settings {
+                   lbParams = defaultLBParameters,
+                   pbParams = defaultPBParameters,
+                   font = defaultFont,
+                   fontSize = defaultFontSize,
+                   ilFactor = defaultInterlineFactor,
+                   spaceFactors = defaultSpaceFactors,
+                   numberPosition = defaultNumberPosition,
+                   pageOffset = defaultPageOffset,
+                   startOnOffset = True,
+                   lineWidth = defaultLines,
+                   pageHeight = defaultPageHeights,
+                   margins = defaultMargins,
+                   docType = PB.Book}
 
-defaultLines :: [Int]
-defaultLines = [ fromIntegral $ points (fromIntegral $ fst $ computeBoxSize' defaultMargins) ]
+mdSettings :: Settings
+mdSettings = defaultSettings{spaceFactors=UT.SimpleSpaceFactors (1.0/3.0) (1.0/6.0) (1.0/9.0) 4.0, numberPosition=PB.Pos Bot Cent} 
+dgSettings :: Settings
+dgSettings = defaultSettings{pageHeight = take 6 defaultPageHeights, ilFactor=1.8, pageOffset = 0}
+meSettings :: Settings
+meSettings = defaultSettings{pageHeight = take 7 defaultPageHeights, font= loadFont (Right defaultFontSize) "C:/texlive/2021/texmf-dist/fonts/tfm/public/baskervillef/BaskervilleF-Italic.tfm"}
 
--- experimental
-defaultPageHeights :: [Int]
-defaultPageHeights = concat $ replicate 12 [fromIntegral $ points (46 * 10 + 45 * 15)]
+-- customizeSettings :: Maybe LB.Parameters -> Maybe (IO Font) -> Maybe Word32
+--                        -> Maybe Float -> Maybe SimpleSpaceFactors -> Maybe Int -> Maybe Bool
+--                        -> Maybe [Int] -> Maybe [Int] -> Maybe PB.Margins -> Settings
+-- customizeSettings (Just param) (Just font) (Just fs) (Just ilf) (Just sF) (Just pOff) (Just sOO) (Just lws) (Just phs) (Just ms) = defaultSettings{params = param, font = font,
+--                                                               fontSize = fs, ilFactor = ilf, spaceFactors = sF,
+--                                                               pageOffset = pOff, startOnOffset = sOO, lineWidth=lws,
+--                                                               pageHeight=phs,margins =ms}
+
+defaultLBParameters :: LB.Parameters
+defaultLBParameters = LB.Parameters 10000 10000 LB.infinity LB.infinity
+
+defaultPBParameters :: LB.Parameters
+defaultPBParameters = LB.Parameters 10000 10000 LB.infinity LB.infinity
 
 defaultFont :: IO Font
 defaultFont = loadFont (Right defaultFontSize)
@@ -31,23 +72,36 @@ defaultFontSize :: Word32
 defaultFontSize = 65536 * 10
 
 defaultInterlineFactor :: Float
-defaultInterlineFactor = 1.2
+defaultInterlineFactor = 1.5
 
 defaultInterlineSpace :: Int
-defaultInterlineSpace = 65536 * 15
+defaultInterlineSpace = round $ defaultInterlineFactor * fromIntegral defaultFontSize
 
-defaultPageOffset :: Int 
+defaultNumberPosition :: PB.Position 
+defaultNumberPosition = Pos Top Ri
+
+defaultPageOffset :: Int
 defaultPageOffset = 2
 
-startOnNonFirstPage :: Bool 
+startOnNonFirstPage :: Bool
 startOnNonFirstPage = True
 
--- default 72 72 64 64 
+defaultLines :: [Int]
+defaultLines = [ fromIntegral $ points (fromIntegral $ fst $ computeBoxSize' defaultMargins) ]
+
+defaultPageHeights :: [Int]
+defaultPageHeights = concat $ replicate 12 [fromIntegral $ points $ fromIntegral $ approximateNumberOfLines 45]
+  where
+    approximateNumberOfLines :: Int -> Int
+    approximateNumberOfLines n = (n * fromIntegral defaultFontSize + (n-1) * defaultInterlineSpace) `div` 65536
+
 defaultMargins :: PB.Margins
 defaultMargins = Margins 72 72 64 64
 
+defaultSpaceFactors :: UT.SimpleSpaceFactors
+defaultSpaceFactors = SimpleSpaceFactors (1.0/3.0) (1.0/6.0) (1.0/9.0) 0.0
 
-defaultLinebreaker :: [Item Char] -> [Int] -> LB.Parameters -> Font -> String -> IO ()
+defaultLinebreaker :: [LB.Item Char] -> [Int] -> LB.Parameters -> Font -> String -> IO ()
 defaultLinebreaker items lines' parameters' font fileName = do
   let
     result = LB.processOutput (Just '-') items $ crashErrorHandling $ LB.knuthPlassLineBreaking items lines' parameters'
@@ -55,13 +109,13 @@ defaultLinebreaker items lines' parameters' font fileName = do
   singlePageDocument node $ "./files/" ++ fileName
 
 -- first attempt to make multi-page documents, by building them by hand
-multiPageLinebreaker :: [Item Char] -> [Int] -> LB.Parameters -> Font -> String -> IO()
+multiPageLinebreaker :: [LB.Item Char] -> [Int] -> LB.Parameters -> Font -> String -> IO()
 multiPageLinebreaker items lines' parameters' font fileName = do
   let
     -- result = list of lines (line == list of items)
     result = concat $ replicate 7 $ LB.processOutput (Just '-') items $ crashErrorHandling $ LB.knuthPlassLineBreaking items lines' parameters'
     pages = simplePageBreaking (preparePage result (fromIntegral defaultFontSize) defaultInterlineFactor) (snd $ computeBoxSize' defaultMargins)
-    node1 = simpleDviNodeOutput font defaultInterlineFactor (getLines $ pages !! 0)
+    node1 = simpleDviNodeOutput font defaultInterlineFactor (getLines $ head pages)
     node2 = simpleDviNodeOutput font defaultInterlineFactor (getLines $ pages !! 1)
   print (length $ simplePageBreaking (preparePage result (fromIntegral defaultFontSize) defaultInterlineFactor) (snd $ computeBoxSize' defaultMargins))
   createDVI ("./files/" ++ fileName) 1000 dviUnitsTeX
@@ -74,46 +128,42 @@ multiPageLinebreaker items lines' parameters' font fileName = do
                                                         renderNode (simpleDviNodeOutput font ilf (getLines p))
 
 -- creates multi-page documents out of the result of the simple page-breaking algorithm
-multiPageLinebreaker' :: [Item Char] -> [Int] -> LB.Parameters -> Font -> String -> IO()
-multiPageLinebreaker' items lines' parameters' font fileName = do
-  let
-    -- result = concat $ replicate 7 $ LB.processOutput (Just '-') items $ crashErrorHandling $ LB.knuthPlassLineBreaking items lines' parameters'
-    result = LB.processOutput (Just '-') items $ crashErrorHandling $ LB.knuthPlassLineBreaking items lines' parameters'
-    pages = simplePageBreaking (preparePage result (65536 * 10) defaultInterlineFactor) (snd $ computeBoxSize' defaultMargins)
+multiPageLinebreaker' :: [PB.Page] -> Settings -> Font -> String -> IO()
+multiPageLinebreaker' pages set@Settings {ilFactor=ilF, numberPosition=nPos, pageOffset=pOff, startOnOffset=sOnOff, margins=margs, docType = dT} font fileName = do
   createDVI ("./files/" ++ fileName) 1000 dviUnitsTeX
-    >>= mPLhelper 1 pages font defaultInterlineFactor defaultMargins
+    >>= mPLhelper 1 pages font ilF margs
     >>= finishDVI
   where
     mPLhelper :: Int -> [PB.Page] -> Font -> Float -> PB.Margins -> DocStat -> IO DocStat
     mPLhelper _ [] _ _ _ _= error "no valid document"
     mPLhelper i [p] font iLFactor margs ds = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent i font iLFactor margs p)) ds
-    mPLhelper i (p:ps) font iLFactor margs ds = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent i font iLFactor margs p)) ) ds
-                                                        >>= (mPLhelper (i + 1) ps font iLFactor margs)
-    pageContent i font ilf margs p = [shiftPage (points (fromIntegral $ PB.getLeftMargin margs), points (fromIntegral $ PB.getTopMargin margs)) $
-                                                        renderNode (simpleDviNodeOutput font ilf (getLines p)),
-                                    shiftPage (points $ fromIntegral 226, points $ fromIntegral 30) $ renderNode $ simpleDviNodeOutput font ilf [[LB.Box (Just (chr (i + 48))) 0]]]
+    mPLhelper i (p:ps) font iLFactor margs ds = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent i font iLFactor margs p) ) ds
+                                                        >>= mPLhelper (i + 1) ps font iLFactor margs
+    pageContent i font ilf margs p = shiftPage (points (fromIntegral $ PB.getLeftMargin margs), points (fromIntegral $ PB.getTopMargin margs))
+                                                        (renderNode (simpleDviNodeOutput font ilf (getLines p))) :
+                                                        PB.pageNumbers dT nPos font ilf i pOff sOnOff
 
 
 -- creates a document using the non-knuth-plass, simple pagebreaking algorithm
-ownDoc :: IO ()
-ownDoc = do
-  font <- defaultFont
-  -- content <- MD.loadFile "test.md"
-  -- content <- MD.splitLines content
+ownDoc :: String -> Settings -> [String] -> IO ()
+ownDoc fileName set@Settings {lbParams=lbPar, font=ft, fontSize=fS, ilFactor=ilF, spaceFactors=sF, lineWidth=lW, margins=margs} txt = do
+  font <- ft
   let
-    items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree)  defaultSpaceFactors False
-  multiPageLinebreaker' items defaultLines defaultParameters font "ownDoc.dvi"
+    items = concatMap (\x -> stringToItems font x sF False) txt
+    items' = LB.processOutput (Just '-') items $ crashErrorHandling $ LB.knuthPlassLineBreaking items lW lbPar
+    pages = simplePageBreaking (preparePage items' (fromIntegral fS) ilF) (snd $ computeBoxSize' margs)
+  multiPageLinebreaker' pages set font fileName
 
 -- used for debugging, prints the result of the algorithm
 examplePB :: IO()
 examplePB = do
     font <- defaultFont
     let
-      items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree)  defaultSpaceFactors False
-    print $ prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultInterlineSpace defaultParameters
+      items = concatMap (\x -> stringToItems font x defaultSpaceFactors False) (TT.mobyDickChapterOneEng ++ [" "] ++ TT.mobyDickChapterTwoEng ++[" "] ++ TT.mobyDickChapterThreeEng ++[" "] ++ TT.mobyDickChapterFourEng)
+    print $ prune $ PB.knuthPlassPageBreaking (fromRight [] (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultLBParameters)) defaultPageHeights defaultInterlineSpace defaultPBParameters
 
 --  first attempt to create a document using the page-breaking algorithm and the DVI-processing, printing just one page
-makePage :: Either PageBreakError [[Item [Item Char]]] -> Font -> IO()
+makePage :: Either PageBreakError [[LB.Item [LB.Item Char]]] -> Font -> IO()
 makePage pages font = createDVI ("./files/" ++ "something.dvi") 1000 dviUnitsTeX
                       >>= shipOut . Page (pageNum (1 :: Int))
                         (shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) $ renderNode (PB.dviNodeOutput font (fromRight [] pages) !! 1))
@@ -121,28 +171,28 @@ makePage pages font = createDVI ("./files/" ++ "something.dvi") 1000 dviUnitsTeX
 
 
 -- creates a document, using the pagebreaking algorithm
-kpbDocument :: IO()
-kpbDocument = do
-      font <- defaultFont
+kpbDoc :: String -> Settings -> [String] -> IO()
+kpbDoc fileName set@Settings {lbParams=lbPar, pbParams=pbPar, font=ft, fontSize=fS, ilFactor=ilF, spaceFactors=sF, lineWidth=lW, pageHeight=pH} txt= do
+      font <- ft
       let
-        items = stringToItems font (TT.mobyDickChapterOne ++ TT.mobyDickChapterOne ++ TT.mobyDickChapterTwo ++ TT.mobyDickChapterThree ++ TT.mobyDickChapterFour)  defaultSpaceFactors False
-        pages = prune $ PB.knuthPlassPageBreaking (LB.knuthPlassLineBreaking' items (Just '-') defaultLines defaultParameters) defaultPageHeights defaultInterlineSpace defaultParameters
-      -- print pages
-      multiPageLinebreaker'' pages font "kpb_document.dvi"
+        items = concatMap (\x -> stringToItems font x sF False) txt
+        pages = prune $ PB.knuthPlassPageBreaking (LB.processOutput Nothing items (UT.crashErrorHandling $ LB.knuthPlassLineBreaking items lW lbPar))
+                                                  pH (round $ ilF * fromIntegral fS) pbPar
+      multiPageLinebreaker'' pages set font fileName
 
 --  alternative version of multiPageLinebreaker' for the page-breaking algorithm instead of the simple one
-multiPageLinebreaker'' :: Either PageBreakError [[Item [Item Char]]] -> Font -> String -> IO()
-multiPageLinebreaker'' (Right pages) font fileName = do
+multiPageLinebreaker'' :: Either PageBreakError [[LB.Item [LB.Item Char]]] -> Settings -> Font -> String -> IO()
+multiPageLinebreaker'' (Right pages) set@Settings {ilFactor=ilF, numberPosition=nPos, pageOffset=pOff, startOnOffset=sOnOff, pageHeight=pH, margins=margs, docType=dT} font fileName = do
   createDVI ("./files/" ++ fileName) 1000 dviUnitsTeX
   >>= mPLhelper' 1 pages font
   >>= finishDVI
   where
-    mPLhelper' :: Int -> [[Item [Item Char]]] -> Font -> DocStat -> IO DocStat
+    mPLhelper' :: Int -> [[LB.Item [LB.Item Char]]] -> Font -> DocStat -> IO DocStat
     mPLhelper' _ [] _ _= error "no valid document"
     mPLhelper' i [p] font ds = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent' i font p)) ds
-    mPLhelper' i (p:ps) font ds | i <= length defaultPageHeights = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent' i font p))) ds
-                                          >>= (mPLhelper' (i+1) ps font)
-                                | otherwise = (shipOut . (Page (pageNum (i :: Int)) (concat $ pageContent' i font p))) ds
-    pageContent' i font p = shiftPage (points (fromIntegral $ PB.getLeftMargin defaultMargins), points (fromIntegral $ PB.getTopMargin defaultMargins)) (renderNode (PB.dviNodeOutput font pages !! (i-1)))
-                             : PB.pageNumbers (Pos Top Ri) font defaultInterlineFactor i defaultPageOffset startOnNonFirstPage
-multiPageLinebreaker'' _ _ _ = error "no valid document"
+    mPLhelper' i (p:ps) font ds | i <= length pH = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent' i font p)) ds
+                                          >>= mPLhelper' (i+1) ps font
+                                | otherwise = (shipOut . Page (pageNum (i :: Int)) (concat $ pageContent' i font p)) ds
+    pageContent' i font p = shiftPage (points (fromIntegral $ PB.getLeftMargin margs), points (fromIntegral $ PB.getTopMargin margs)) (renderNode (PB.dviNodeOutput font pages !! (i-1)))
+                             : PB.pageNumbers dT nPos font ilF i pOff sOnOff
+multiPageLinebreaker'' _ _ _ _ = error "no valid document"

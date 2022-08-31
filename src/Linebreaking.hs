@@ -3,7 +3,7 @@ module Linebreaking where
 import Data.Maybe
 import Data.Array
 import Control.Monad.State
- 
+
 --type and data definitions
 
 type Width = Int
