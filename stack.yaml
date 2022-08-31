@@ -36,6 +36,7 @@ packages:
 # forks / in-progress versions pinned to a git hash. For example:
 #
 extra-deps:
+- time-1.9.3
 - dvi-processing-0.3.1
 - random-1.2.1
 - process-1.6.13.2

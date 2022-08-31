@@ -4,8 +4,8 @@ import qualified Graphics.DVI as DVI
 import Utilities as UT
 import qualified Linebreaking as LB
 import Data.Int
-import Data.List
-import Data.Char
+import Data.List (intersperse)
+import Data.Char (chr)
 import Linebreaking (knuthPlassLineBreaking)
 
 data PageBreakError = NoInput  | NoLines | NoSolutionLooseness | NoRemainingActives
@@ -13,8 +13,12 @@ data PageBreakError = NoInput  | NoLines | NoSolutionLooseness | NoRemainingActi
 
 data Position = Pos Height Vert 
 
+data DocType = Article | Book
+
 data Height = Top | Bot
+    deriving(Show,Eq)
 data Vert = Le | Cent | Ri 
+    deriving(Show,Eq)
 --  data model representing the margins of a Page (unit: pts)
 data Margins  = Margins {
     leftMargin :: Int,
@@ -58,7 +62,7 @@ computeBoxSize' (Margins l r t b) = computeBoxSize l r t b
 
 -- makes a page(see definition above) out of the items from the linebreaking
 preparePage :: [[LB.Item Char]] -> Int -> Float -> Page
-preparePage [] _ _ = P ([], 0)
+preparePage [] _ _                   = P ([], 0)
 preparePage items@(i:is) fs ilFactor = P (items,  (ilFactor - 1) * fromIntegral fs + fromIntegral fs)
 
 
@@ -71,18 +75,21 @@ simplePageBreaking (P (ls, lh)) cHeight | length ls >= lineCount = P (take lineC
         lineCount :: Int
         lineCount = floor ((65536 * fromIntegral cHeight) / lh)
 
+
 -- page breaking algorithm, using the knuth-plass-linebreaking algorithm to make pages out of lines
-knuthPlassPageBreaking :: Either LB.LineBreakError [[LB.Item b]] -> [LB.Width] -> Int -> LB.Parameters -> Either PageBreakError (Either LB.LineBreakError [[LB.Item [LB.Item b]]])
-knuthPlassPageBreaking (Left _) _ _ _ = Left NoInput
-knuthPlassPageBreaking (Right lines) pageHeights ils parameters'= Right (LB.knuthPlassLineBreaking' (buildLines' ils lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
+knuthPlassPageBreaking :: [[LB.Item b]] -> [LB.Width] -> Int -> LB.Parameters -> Either PageBreakError (Either LB.LineBreakError [[LB.Item [LB.Item b]]])
+knuthPlassPageBreaking lines pageHeights ils parameters'= Right (LB.knuthPlassLineBreaking' (buildLines' ils lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
+
 
 -- makes Boxes, which the algorithm can use, out of the lines
 buildLines :: [a] -> [LB.Item a]
 buildLines  = map (\x -> LB.Box (Just x) 655360)
 
+
 -- adds changeable glue inbetween the lines
 buildLines' :: Int -> [b] -> [LB.Item b]
-buildLines' ils lines = intersperse (LB.Glue ils 1000 1000) (buildLines lines) ++ [LB.Glue ils 1000 1000]
+buildLines' ils lines = intersperse (LB.Glue ils 100 100) (buildLines lines) ++ [LB.Glue ils 100 100]
+
 
 -- reduces the complex data structure, the page-breaking algorithm gives as an output, by transforming the errors
 -- from the linebreaking into errors of the pagebreaking
@@ -94,6 +101,7 @@ prune (Right (Left e)) = case e of
                             LB.NoSolutionLooseness -> Left LBNoSolutionLooseness
                             LB.NoRemainingActives -> Left LBNoRemainingActives
 prune (Right (Right xs)) = Right xs
+
 
 -- builds the internally used representation for Nodes, to later display the output in a DVI-File
 dviNodeOutput :: DVI.Font -> [[LB.Item [LB.Item Char]]] -> [DVI.Node]
@@ -119,6 +127,7 @@ dviNodeOutput font =  map (dviPageNodeOutput font)
         extractItems ((LB.Box (Just xs) _):ls) = xs : extractItems ls
         extractItems (_:ls ) = extractItems ls
 
+
 posToCoord :: Position -> (Int,Int)
 posToCoord (Pos Top Ri)   = (482, 30)
 posToCoord (Pos Top Cent) = (226,30)
@@ -128,20 +137,35 @@ posToCoord (Pos Bot Cent) = (226, -750)
 posToCoord (Pos Bot Le)   = (-30, -750)
 
 
-pageNumbers :: Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
-pageNumbers p font ilf i offset False | iOff < 1                            = []
+pageNumbers :: DocType -> Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
+pageNumbers Article p font ilf i offset sOnOff = pageNumbersArticle p font ilf i offset sOnOff
+pageNumbers Book p font ilf i offset sOnOff = pageNumbersBook p font ilf i offset sOnOff
+
+-- returns the internal representation of a pagenumber, including its position and value
+pageNumbersArticle :: Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
+pageNumbersArticle p font ilf i offset False | iOff < 1                            = []
                                        | offset < 1 && iOff < (10 + offset)  = [pnHelper p i 0]
                                        | offset > 0 && iOff < 10             = [pnHelper p iOff 0] 
                                        | offset < 1 && iOff >= (10 + offset) = [pnHelper p (i `mod` 10) 5,
                                                                                 pnHelper p (i `div` 10) 0]
                                        | offset > 0 && iOff >= 10            = [pnHelper p (iOff `mod` 10) 5,
                                                                                 pnHelper p (iOff `div` 10) 0]
-pageNumbers p font ilf i offset True  | offset < 0 && iOff < (1 + offset) || iOff < 1 = []
-                                       | iOff < 10                                     = [pnHelper p iOff 0]
-                                       | iOff >= 10                                    = [pnHelper p (iOff `mod` 10) 5,
-                                                                                          pnHelper p (iOff `div` 10) 0]
-pageNumbers _ _ _ _ _ _ = []
-     where  
+                                                                                   where  
         iOff = i + offset                   
         pnHelper p' i' addX = DVI.shiftPage (DVI.points $ fromIntegral (fst (posToCoord p') + addX) , DVI.points $ fromIntegral $ snd $ posToCoord p' )
                  $ DVI.renderNode $ simpleDviNodeOutput font ilf [[LB.Box (Just (chr (i' + 48 ))) 0]]
+pageNumbersArticle p font ilf i offset True  | offset < 0 && iOff < (1 + offset) || iOff < 1 = []
+                                       | iOff < 10                                     = [pnHelper p iOff 0]
+                                       | iOff >= 10                                    = [pnHelper p (iOff `mod` 10) 5,
+                                                                                          pnHelper p (iOff `div` 10) 0]
+                                                                                   where  
+        iOff = i + offset                   
+        pnHelper p' i' addX = DVI.shiftPage (DVI.points $ fromIntegral (fst (posToCoord p') + addX) , DVI.points $ fromIntegral $ snd $ posToCoord p' )
+                 $ DVI.renderNode $ simpleDviNodeOutput font ilf [[LB.Box (Just (chr (i' + 48 ))) 0]]
+pageNumbersArticle _ _ _ _ _ _ = []
+ 
+
+pageNumbersBook :: Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
+pageNumbersBook p@(Pos h Cent) font ilf i offset b = pageNumbersArticle p font ilf i offset b
+pageNumbersBook (Pos h lor) font ilf i offset b | i `mod` 2 == 1  = pageNumbersArticle (Pos h Ri) font ilf i offset b
+                                                    | otherwise = pageNumbersArticle (Pos h Le) font ilf i offset b
