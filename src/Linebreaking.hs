@@ -1,5 +1,5 @@
 module Linebreaking where
-
+ 
 import Data.Maybe
 import Data.Array
 import Control.Monad.State
