@@ -3,22 +3,21 @@ module Pagebreaking where
 import qualified Graphics.DVI as DVI
 import Utilities as UT
 import qualified Linebreaking as LB
-import Data.Int
+import Data.Int (Int32)
 import Data.List (intersperse)
 import Data.Char (chr)
-import Linebreaking (knuthPlassLineBreaking)
 
 data PageBreakError = NoInput  | NoLines | NoSolutionLooseness | NoRemainingActives
                     | LBNoInput | LBNoLines | LBNoSolutionLooseness | LBNoRemainingActives deriving Show
 
-data Position = Pos Height Vert 
-
 data DocType = Article | Book
 
+data Position = Pos Height Vert 
 data Height = Top | Bot
     deriving(Show,Eq)
 data Vert = Le | Cent | Ri 
     deriving(Show,Eq)
+
 --  data model representing the margins of a Page (unit: pts)
 data Margins  = Margins {
     leftMargin :: Int,
@@ -31,15 +30,11 @@ data Margins  = Margins {
 getLeftMargin :: Margins -> Int
 getLeftMargin (Margins l _ _ _) | l > 72 = l
                                 | otherwise = l - 72
-
 getRightMargin :: Margins -> Int
 getRightMargin (Margins _ r _ _) = r
-
--- includes computation for the shift when building the pages
 getTopMargin :: Margins -> Int
 getTopMargin (Margins _ _ t _) | t > 64 = - (t - 64)
                                | otherwise = 64 - t
-
 getBotMargin :: Margins -> Int
 getBotMargin (Margins _ _ _ b) = b
 
@@ -51,14 +46,14 @@ getLines :: Page -> [[LB.Item Char]]
 getLines (P (ls, _)) = ls
 
 
--- computes the size of the Box where content can be placed (in pts)
-computeBoxSize :: Int -> Int -> Int -> Int -> (Int, Int)
-computeBoxSize lMarg rMarg topMarg botMarg = (596 - (lMarg + rMarg),
-                                              842 - (topMarg + botMarg))
 -- computes the size of the Box where content can be placed (in pts), using the Margins data type
-computeBoxSize' :: Margins -> (Int, Int)
-computeBoxSize' (Margins l r t b) = computeBoxSize l r t b
-
+computeBoxSize :: Margins -> (Int, Int)
+computeBoxSize (Margins l r t b) = computeBoxSize' l r t b
+    where 
+        computeBoxSize' :: Int -> Int -> Int -> Int -> (Int, Int)
+        computeBoxSize' lMarg rMarg topMarg botMarg = (596 - (lMarg + rMarg),
+                                              842 - (topMarg + botMarg))
+        
 
 -- makes a page(see definition above) out of the items from the linebreaking
 preparePage :: [[LB.Item Char]] -> Int -> Float -> Page
@@ -78,18 +73,16 @@ simplePageBreaking (P (ls, lh)) cHeight | length ls >= lineCount = P (take lineC
 
 -- page breaking algorithm, using the knuth-plass-linebreaking algorithm to make pages out of lines
 knuthPlassPageBreaking :: [[LB.Item b]] -> [LB.Width] -> Int -> LB.Parameters -> Either PageBreakError (Either LB.LineBreakError [[LB.Item [LB.Item b]]])
-knuthPlassPageBreaking lines pageHeights ils parameters'= Right (LB.knuthPlassLineBreaking' (buildLines' ils lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
-
-
--- makes Boxes, which the algorithm can use, out of the lines
-buildLines :: [a] -> [LB.Item a]
-buildLines  = map (\x -> LB.Box (Just x) 655360)
+knuthPlassPageBreaking lines pageHeights ils parameters'= Right (LB.knuthPlassLineBreaking' (buildLines ils lines) (Just [LB.Glue 1000 100000000 100000000]) pageHeights parameters')
 
 
 -- adds changeable glue inbetween the lines
-buildLines' :: Int -> [b] -> [LB.Item b]
-buildLines' ils lines = intersperse (LB.Glue ils 100 100) (buildLines lines) ++ [LB.Glue ils 100 100]
-
+buildLines :: Int -> [b] -> [LB.Item b]
+buildLines ils lines = intersperse (LB.Glue ils 100 100) (buildLines' lines) ++ [LB.Glue ils 100 100]
+    where
+        -- makes Boxes, which the algorithm can use, out of the lines
+        buildLines' :: [a] -> [LB.Item a]
+        buildLines'  = map (\x -> LB.Box (Just x) 655360)
 
 -- reduces the complex data structure, the page-breaking algorithm gives as an output, by transforming the errors
 -- from the linebreaking into errors of the pagebreaking
@@ -128,15 +121,6 @@ dviNodeOutput font =  map (dviPageNodeOutput font)
         extractItems (_:ls ) = extractItems ls
 
 
-posToCoord :: Position -> (Int,Int)
-posToCoord (Pos Top Ri)   = (482, 30)
-posToCoord (Pos Top Cent) = (226,30)
-posToCoord (Pos Top Le)   = (-30, 30) 
-posToCoord (Pos Bot Ri)   = (482, -750)
-posToCoord (Pos Bot Cent) = (226, -750)
-posToCoord (Pos Bot Le)   = (-30, -750)
-
-
 pageNumbers :: DocType -> Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.PageObjects]
 pageNumbers Article p font ilf i offset sOnOff = pageNumbersArticle p font ilf i offset sOnOff
 pageNumbers Book p font ilf i offset sOnOff = pageNumbersBook p font ilf i offset sOnOff
@@ -169,3 +153,11 @@ pageNumbersBook :: Position -> DVI.Font -> Float -> Int -> Int -> Bool -> [DVI.P
 pageNumbersBook p@(Pos h Cent) font ilf i offset b = pageNumbersArticle p font ilf i offset b
 pageNumbersBook (Pos h lor) font ilf i offset b | i `mod` 2 == 1  = pageNumbersArticle (Pos h Ri) font ilf i offset b
                                                     | otherwise = pageNumbersArticle (Pos h Le) font ilf i offset b
+
+posToCoord :: Position -> (Int,Int)
+posToCoord (Pos Top Ri)   = (482, 30)
+posToCoord (Pos Top Cent) = (226,30)
+posToCoord (Pos Top Le)   = (-30, 30) 
+posToCoord (Pos Bot Ri)   = (482, -750)
+posToCoord (Pos Bot Cent) = (226, -750)
+posToCoord (Pos Bot Le)   = (-30, -750)

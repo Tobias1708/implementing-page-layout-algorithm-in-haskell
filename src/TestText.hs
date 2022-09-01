@@ -272,3 +272,5 @@ pictureOfDorianGray = ["The Picture of Dorian Gray"
  ,"The painter turned to his servant, who stood blinking in the sunlight. \"Ask Mr. Gray to wait, Parker: I shall be in in a few moments.\" The man bowed and went up the walk."
  ,"Then he looked at Lord Henry. \"Dorian Gray is my dearest friend,\" he said. \"He has a simple and a beautiful nature. Your aunt was quite right in what she said of him. Don't spoil him. Don't try to influence him. Your influence would be bad. The world is wide, and has many marvellous people in it. Don't take away from me the one person who gives to my art whatever charm it possesses: my life as an artist depends on him. Mind, Harry, I trust you.\" He spoke very slowly, and the words seemed wrung out of him almost against his will."
  ,"\"What nonsense you talk!\" said Lord Henry, smiling, and taking Hallward by the arm, he almost led him into the house."]
+
+--  The excerpts used here are taken from https://www.gutenberg.org/ as far as the author is are aware there are no Copyright issues concerning them.

@@ -13,8 +13,6 @@ data SimpleSpaceFactors = SimpleSpaceFactors {
   indentSize :: Float
 }
 
--- defaultSpaceFactors :: SimpleSpaceFactors
--- defaultSpaceFactors = SimpleSpaceFactors (1.0/3.0) (1.0/6.0) (1.0/9.0) 4.0
 
 stringToItems :: Font -> String -> SimpleSpaceFactors -> Bool -> [Item Char]
 stringToItems font paragraph spaceFactors hyphenate =
