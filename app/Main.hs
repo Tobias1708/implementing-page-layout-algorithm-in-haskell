@@ -1,11 +1,10 @@
 module Main where
 
+import System.IO()
+import Data.Time(getCurrentTime)
+import System.Directory()
 import Graphics.DVI as DVI
-import System.Directory
 import Linebreaking as LB
-import Utilities
-import System.IO
-import Data.Time
 import qualified TestText as TT
 import qualified Pagebreaking as PB
 import qualified PageExamples as PE
@@ -17,7 +16,7 @@ main = do
   ct <- getCurrentTime
   print "   Simple approach start:"
   print ct
-  PE.ownDoc "mobyDickSA.dvi" PE.mdSettings (TT.mobyDickChapterOneEng ++ [" "] ++ TT.mobyDickChapterTwoEng ++[" "] ++ TT.mobyDickChapterThreeEng ++[" "] ++ TT.mobyDickChapterFourEng)
+  PE.ownDoc "mobyDickSA.dvi" PE.mdSettings (TT.mobyDickChapterOneEng ++ [""] ++ TT.mobyDickChapterTwoEng ++[""] ++ TT.mobyDickChapterThreeEng ++[""] ++ TT.mobyDickChapterFourEng)
   ct <- getCurrentTime
   print "   Knuth-Plass approach start:"
   print ct
